@@ -1,0 +1,153 @@
+%Parameterization for Antarctic Glacier Simulation
+
+% ... [Previous sections: model setup, name, stress balance, etc.]
+
+%Geometry
+disp('   Constructing Geometry');
+
+%Define the geometry of the simulation #md.geometry
+%Model domain: 0 to 640 km (x), 0 to 80 km (y)
+Lx = 640000; % meters
+Ly = 80000;  % meters
+
+%Surface: assume flat surface initially, to be relaxed to steady state
+md.geometry.surface = zeros(md.mesh.numberofvertices, 1);
+
+%Bed topography: zb(x,y) = max[Bx(x) + By(y) + roughness, zb_deep]
+%Parameters from paper
+zb_deep = -720;    % meters
+dc = 500;          % meters
+wc = 24000;        % meters (24 km)
+fc = 4000;         % meters (4 km)
+
+%Bx(x) piecewise function, x in kilometers
+x = md.mesh.x / 1000; % Convert meters to kilometers
+Bx = zeros(size(x));
+for i = 1:length(x)
+    if x(i) >= 0 && x(i) <= 350
+        Bx(i) = 150 - 3 * x(i);
+    elseif x(i) > 350 && x(i) <= 450
+        Bx(i) = -900 + 5 * (x(i) - 350);
+    else % x(i) > 450
+        Bx(i) = -400 - 3 * (x(i) - 450);
+    end
+end
+
+%By(y) function, y in meters
+y = md.mesh.y; % meters
+By = dc ./ (1 + exp(-2 * (y - Ly/2 - wc) / fc)) + ...
+     dc ./ (1 + exp(2 * (y - Ly/2 + wc) / fc));
+
+%Add roughness using random midpoint displacement
+%Parameters
+res = 100;           % Target 100 m resolution
+nx = Lx / res + 1;   % 6401 points in x
+ny = Ly / res + 1;   % 801 points in y
+n_recursions = 10;   % Number of recursions
+initial_std = 500;   % Initial standard deviation (m)
+H = 0.7;             % Roughness factor (Hurst exponent)
+
+%Initialize grid for midpoint displacement (2^10 + 1 = 1025 points)
+N = 2^n_recursions;
+dx = Lx / N; % ~625 m
+dy = Ly / N; % ~78.125 m
+field = zeros(N+1, N+1);
+
+%Set random seed for reproducibility
+rng(42);
+
+%Step 1: Initialize corners
+field(1,1) = initial_std * randn();
+field(1,N+1) = initial_std * randn();
+field(N+1,1) = initial_std * randn();
+field(N+1,N+1) = initial_std * randn();
+
+%Step 2: 1D midpoint displacement for boundaries
+function arr = midpoint_1d(arr, start, last, std, level, max_level, h)
+    if level < max_level
+        mid = floor((start + last) / 2);
+        arr(mid) = (arr(start) + arr(last)) / 2 + randn() * std;
+        std_next = std * 2^(-h);
+        arr = midpoint_1d(arr, start, mid, std_next, level+1, max_level, h);
+        arr = midpoint_1d(arr, mid, last, std_next, level+1, max_level, h);
+    end
+end
+
+field(:,1) = midpoint_1d(field(:,1), 1,N+1,initial_std * 2^(-H),0,n_recursions,H);
+field(:,N+1) = midpoint_1d(field(:,N+1),1,N+1,initial_std * 2^(-H),0,n_recursions,H);
+field(1,:) = midpoint_1d(field(1,:),1,N+1,initial_std * 2^(-H),0,n_recursions,H)';
+field(N+1,:) = midpoint_1d(field(N+1,:),1,N+1,initial_std * 2^(-H),0,n_recursions,H)';
+
+%Step 3: 2D diamond-square for interior
+for iter = 0:n_recursions-1
+    step = 2^(n_recursions - iter - 1);
+    scale = initial_std * (2^(-iter * H));
+    
+    %Diamond step: centers
+    for i = step+1:2*step:N+1
+        for j = step+1:2*step:N+1
+            field(i,j) = (field(i-step,j-step) + field(i-step,j+step) + ...
+                         field(i+step,j-step) + field(i+step,j+step)) / 4 + ...
+                         randn() * scale;
+        end
+    end
+    
+    %Square step: edges
+    for i = 1:step:N+1
+        for j = 1:step:N+1
+            if i > 1 && i < N+1 && j > 1 && j < N+1
+                neighbors = [];
+                if i-step >= 1
+                    neighbors = [neighbors field(i-step,j)];
+                end
+                if i+step <= N+1
+                    neighbors = [neighbors field(i+step,j)];
+                end
+                if j-step >= 1
+                    neighbors = [neighbors field(i,j-step)];
+                end
+                if j+step <= N+1
+                    neighbors = [neighbors field(i,j+step)];
+                end
+                if ~isempty(neighbors)
+                    field(i,j) = mean(neighbors) + randn() * scale;
+                end
+            end
+        end
+    end
+end
+
+%Interpolate to 100 m resolution and ISSM mesh
+[X, Y] = meshgrid(0:dx:Lx, 0:dy:Ly);
+[X_fine, Y_fine] = meshgrid(0:res:Lx, 0:res:Ly);
+field_fine = interp2(X, Y, field, X_fine, Y_fine, 'linear');
+roughness = interp2(X_fine, Y_fine, field_fine, md.mesh.x, md.mesh.y, 'linear');
+
+%Combine and apply deep limit
+md.geometry.base = max(Bx + By + roughness, zb_deep);
+
+%Thickness: surface - base
+md.geometry.thickness = md.geometry.surface - md.geometry.base;
+
+plotmodel(md, 'data', md.geometry.thickness);
+
+%Basal friction coefficient: C(x,y) = Cx(x) * Cy(y)
+md.friction = frictionweertman();
+x = md.mesh.x;
+Cx = 0.02 + 0.005 * sin(2 * pi * (x - Lx) / 40) .* sin(10 * 2 * pi * x / Lx);
+Cy = sin(pi * (y - Ly) / (Ly)) + 2;
+md.friction.C = Cx .* Cy;
+
+%Weertman friction law, m=1/3
+md.friction.m = 1/3;
+
+%ice viscousity
+
+
+md.materials.rheology_n = 3 * ones(md.mesh.numberofelements, 1);
+
+%Initialize velocity and pressure to zero
+md.initialization.vx = zeros(md.mesh.numberofvertices, 1);
+md.initialization.vy = zeros(md.mesh.numberofvertices, 1);
+
+% ... [Remaining sections: forcings, transient simulation, etc.]
