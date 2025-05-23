@@ -1,7 +1,7 @@
 function runme(nprocs)
 
 	%  read kwargs from a .mat file
-	kwargs = load('model_kwargs.mat');
+	kwargs = load('model_kwargs_0.mat');
 
 	%  access the values of the dictionary
 	ParamFile = char(kwargs.ParamFile);
