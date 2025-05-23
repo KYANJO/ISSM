@@ -1,0 +1,204 @@
+% ISSM MATLAB script converted from Python
+disp(' creating thickness');
+
+% Define constants
+Lx = 640000;
+Ly = 80000;
+xbar = 300000;
+fc = 4000;
+wc = 24000;
+dc = 500;
+
+% Calculate bed elevation (bx)
+bx = zeros(md.mesh.numberofvertices, 1);
+pos = find(md.mesh.x <= 350000);
+bx(pos) = 150 - 3 * md.mesh.x(pos) / 1000;
+pos = find(md.mesh.x > 350000 & md.mesh.x <= 450000);
+bx(pos) = -900 + 5 * (md.mesh.x(pos) / 1000 - 350);
+pos = find(md.mesh.x > 450000);
+bx(pos) = -400 - 3 * (md.mesh.x(pos) / 1000 - 450);
+
+% Calculate y-component of bed elevation (by)
+by = dc ./ (1 + exp(-2/fc * (md.mesh.y - Ly/2 - wc))) + ...
+     dc ./ (1 + exp(2/fc * (md.mesh.y - Ly/2 + wc)));
+
+% Calculate by at y=0
+by0 = dc / (1 + exp(-2/fc * (0 - Ly/2 - wc))) + ...
+      dc / (1 + exp(2/fc * (0 - Ly/2 + wc)));
+
+%Add roughness using random midpoint displacement
+%Parameters
+res = 100;           % Target 100 m resolution
+nx = Lx / res + 1;   % 6401 points in x
+ny = Ly / res + 1;   % 801 points in y
+n_recursions = 10;   % Number of recursions
+initial_std = 500;   % Initial standard deviation (m)
+H = 0.7;             % Roughness factor (Hurst exponent)
+
+%Initialize grid for midpoint displacement (2^10 + 1 = 1025 points)
+N = 2^n_recursions;
+dx = Lx / N; % ~625 m
+dy = Ly / N; % ~78.125 m
+field = zeros(N+1, N+1);
+
+%Set random seed for reproducibility
+rng(10);
+
+%Step 1: Initialize corners
+field(1,1) = initial_std * randn();
+field(1,N+1) = initial_std * randn();
+field(N+1,1) = initial_std * randn();
+field(N+1,N+1) = initial_std * randn();
+
+%Step 2: 1D midpoint displacement for boundaries
+function arr = midpoint_1d(arr, start, last, std, level, max_level, h)
+    if level < max_level
+        mid = floor((start + last) / 2);
+        arr(mid) = (arr(start) + arr(last)) / 2 + randn() * std;
+        std_next = std * 2^(-h);
+        arr = midpoint_1d(arr, start, mid, std_next, level+1, max_level, h);
+        arr = midpoint_1d(arr, mid, last, std_next, level+1, max_level, h);
+    end
+end
+
+field(:,1) = midpoint_1d(field(:,1), 1,N+1,initial_std * 2^(-H),0,n_recursions,H);
+field(:,N+1) = midpoint_1d(field(:,N+1),1,N+1,initial_std * 2^(-H),0,n_recursions,H);
+field(1,:) = midpoint_1d(field(1,:),1,N+1,initial_std * 2^(-H),0,n_recursions,H)';
+field(N+1,:) = midpoint_1d(field(N+1,:),1,N+1,initial_std * 2^(-H),0,n_recursions,H)';
+
+%Step 3: 2D diamond-square for interior
+for iter = 0:n_recursions-1
+    step = 2^(n_recursions - iter - 1);
+    scale = initial_std * (2^(-iter * H));
+    
+    %Diamond step: centers
+    for i = step+1:2*step:N+1
+        for j = step+1:2*step:N+1
+            field(i,j) = (field(i-step,j-step) + field(i-step,j+step) + ...
+                         field(i+step,j-step) + field(i+step,j+step)) / 4 + ...
+                         randn() * scale;
+        end
+    end
+    
+    %Square step: edges
+    for i = 1:step:N+1
+        for j = 1:step:N+1
+            if i > 1 && i < N+1 && j > 1 && j < N+1
+                neighbors = [];
+                if i-step >= 1
+                    neighbors = [neighbors field(i-step,j)];
+                end
+                if i+step <= N+1
+                    neighbors = [neighbors field(i+step,j)];
+                end
+                if j-step >= 1
+                    neighbors = [neighbors field(i,j-step)];
+                end
+                if j+step <= N+1
+                    neighbors = [neighbors field(i,j+step)];
+                end
+                if ~isempty(neighbors)
+                    field(i,j) = mean(neighbors) + randn() * scale;
+                end
+            end
+        end
+    end
+end
+
+%Interpolate to 100 m resolution and ISSM mesh
+[X, Y] = meshgrid(0:dx:Lx, 0:dy:Ly);
+[X_fine, Y_fine] = meshgrid(0:res:Lx, 0:res:Ly);
+field_fine = interp2(X, Y, field, X_fine, Y_fine, 'linear');
+roughness = interp2(X_fine, Y_fine, field_fine, md.mesh.x, md.mesh.y, 'linear');
+
+% Set geometry fields
+md.geometry.bed = max(bx + by, -720);
+%md.geometry.surface =  max(bx + by0 + roughness , 10);
+md.geometry.surface = max(bx + by0 + 100, 10);
+md.geometry.base = max(md.geometry.bed, -90);
+md.geometry.thickness = md.geometry.surface - md.geometry.base;
+
+%figure;
+ %plotmodel(md, 'data', md.geometry.thickness, 'title', 'Ice Thickness_t=0');
+%figure;
+ plotmodel(md, 'data', md.geometry.bed, 'title', 'Ice bed_t=0');
+ %figure;
+ %plotmodel(md, 'data', md.geometry.surface, 'title', 'Ice surface_t=0');
+
+disp('      creating drag');
+
+% Calculate friction coefficient
+Cx = 0.02 + 0.01 * sin(5 * 2 * pi * (md.mesh.x - 640000) / 640000) .* ...
+     sin(30 * 2 * pi * md.mesh.x / 600000);
+Cy = sin(pi * (md.mesh.y - 80000) / 80000) + 2;
+md.friction.coefficient = sqrt((Cx .* Cy) * 10^6 * (md.constants.yts)^(1/3));
+
+% Set friction exponents
+md.friction.p = 3 * ones(md.mesh.numberofelements, 1);
+md.friction.q = zeros(md.mesh.numberofelements, 1);
+
+disp('      creating flow law parameter');
+
+% Set rheology parameters
+md.materials.rheology_B = 1 / ((6.338e-25)^(1/3)) * ones(md.mesh.numberofvertices, 1);
+md.materials.rheology_n = 3 * ones(md.mesh.numberofelements, 1);
+md.materials.rheology_law = 'None';
+
+disp('      boundary conditions for diagnostic model');
+
+% Initialize levelsets
+md.mask.ice_levelset = NaN * ones(md.mesh.numberofvertices, 1);
+md.mask.ocean_levelset = NaN * ones(md.mesh.numberofvertices, 1);
+
+% Apply ice shelf boundary conditions
+md = SetIceShelfBC(md, 'Front.exp');
+
+% Set levelsets
+md.mask.ice_levelset(:) = -1;
+md.mask.ocean_levelset(:) = -1;
+pos = find(md.mesh.x < 640000.1 & md.mesh.x > 639999.9);
+md.mask.ice_levelset(pos) = 0;
+
+% Initialize velocity constraints
+md.stressbalance.spcvx = NaN * ones(size(md.mesh.x));
+md.stressbalance.spcvy = NaN * ones(size(md.mesh.y));
+
+% Apply boundary conditions for y-velocity
+pos = find((md.mesh.y < 80000.1 & md.mesh.y > 79999.9) | ...
+           (md.mesh.y < 0.1 & md.mesh.y > -0.1));
+md.stressbalance.spcvy(pos) = 0;
+
+% Apply boundary conditions for x-velocity and y-velocity at x=0
+pos2 = find(md.mesh.x < 0.1 & md.mesh.x > -0.1);
+md.stressbalance.spcvx(pos2) = 50;
+md.stressbalance.spcvy(pos2) = 0;
+
+disp('      forcing conditions');
+
+% Set surface mass balance
+md.smb.mass_balance = 0.3 * ones(md.mesh.numberofvertices, 1);
+
+% Set geothermal flux
+md.basalforcings.geothermalflux = 0.5 * ones(md.mesh.numberofvertices, 1);
+
+% Set thermal boundary conditions
+md.thermal.spctemperature = NaN * ones(md.mesh.numberofvertices, 1);
+md.groundingline.migration = 'SubelementMigration';
+
+% Set material properties
+md.materials.rho_ice = 918;
+md.materials.rho_water = 1028;
+md.constants.g = 9.81;
+
+% Set transient model parameters
+md.transient.isthermal = 0;
+md.transient.isgroundingline = 1;
+md.stressbalance.isnewton = 0;
+
+% Initialization
+md.initialization.vx = ones(md.mesh.numberofvertices, 1);
+md.initialization.vy = ones(md.mesh.numberofvertices, 1);
+md.initialization.vz = ones(md.mesh.numberofvertices, 1);
+md.initialization.vel = sqrt(2) * ones(md.mesh.numberofvertices, 1);
+md.initialization.pressure = md.constants.g * md.materials.rho_ice * md.geometry.thickness;
+md.initialization.temperature = 273 * ones(md.mesh.numberofvertices, 1);
