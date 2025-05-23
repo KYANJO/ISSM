@@ -21,7 +21,7 @@ md.geometry.base=md.geometry.surface-1000.0+100.0*exp(-((md.mesh.x-L/2.0).^2.0+(
 md.geometry.thickness=md.geometry.surface-md.geometry.base;
 %plot the geometry to check it out
 %->
-plotmodel(md,'data',md.geometry.thickness);
+%plotmodel(md,'data',md.geometry.thickness);
 
 disp('   Defining friction parameters');
 
