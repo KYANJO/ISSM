@@ -3,6 +3,7 @@ Ly = 80000;
 
 steps=[1:3];
 % steps=[8];
+% steps=[6];
 
 ens_id = 0;
 
@@ -82,9 +83,12 @@ if any(steps == 3)
     
     filename = fullfile(folder, 'ISMIP.Parameterization.mat');
     save(filename, 'md');
+<<<<<<< HEAD
 
     % write_netCDF(md, 'ISMIP_Parameterization.nc');
     export_netCDF(md,'ISMIP_Parameterization.nc')
+=======
+>>>>>>> b078ca9addeef56b5d5c21b2efb88ead3c2972d3
 end
 
 % Transient Steady state and BC
