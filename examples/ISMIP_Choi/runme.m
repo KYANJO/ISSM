@@ -1,11 +1,21 @@
+cwd = pwd
+[issmroot,~,~]=fileparts(fileparts(cwd));
+newpath=fullfile(issmroot,'/src/m/dev');
+addpath(newpath);
+devpath;
+
 Lx = 640000;
 Ly = 80000;
 
-steps=[1:5];
+steps=[1:4];
 % steps=[8];
 % steps=[7];
 
+nprocs = 48;
+
 ens_id = 0;
+
+loadonly = 0;
 
 folder = sprintf('./Models/ens_id_%d', ens_id);
 if ~exist(folder, 'dir')
@@ -62,16 +72,6 @@ if any(steps == 1)
     save(filename, 'md');
 end
 
-% Masks (Step 2)
-% if any(steps == 2)
-%     filename = fullfile(folder, 'ISMIP.Mesh_generation.mat');
-%     md = loadmodel(filename);
-%     md = setmask(md, '', ''); % All grounded, no ice shelves
-%     % plotmodel(md,'data',md.mask.ocean_levelset);
-%     filename = fullfile(folder, 'ISMIP.SetMask.mat');
-%     save(filename, 'md');
-% end
-
 % Parameterization (Step 2)
 if any(steps == 2)
     % filename = fullfile(folder, 'ISMIP.SetMask.mat');
@@ -86,7 +86,7 @@ if any(steps == 2)
 
     % write_netCDF(md, 'ISMIP_Parameterization.nc');
     % export_netCDF(md,'ISMIP_Parameterization.nc');
-    plotmodel(md, 'data', md.geometry.bed, 'title', 'Ice bed_t=0');
+    % plotmodel(md, 'data', md.geometry.bed, 'title', 'Ice bed_t=0');
 end
 
 % Transient Steady state and BC
@@ -115,10 +115,14 @@ if any(steps == 4)
     md=setflowequation(md,'SSA','all');
     
     % Time stepping
-    md.timestepping=timesteppingadaptive();
-    md.timestepping.time_step_max=100;
-    md.timestepping.time_step_min=0.1;
-    md.timestepping.final_time=15000;
+    % md.timestepping=timesteppingadaptive();
+    % md.timestepping.time_step_max=100;
+    % md.timestepping.time_step_min=0.1;
+    % md.timestepping.final_time=15000;
+
+    md.timestepping.start_time = 0;
+    md.timestepping.time_step = 2;
+    md.timestepping.final_time=25000;
 
     md.settings.output_frequency=100;
     md.stressbalance.maxiter=100;
@@ -128,22 +132,25 @@ if any(steps == 4)
     
     % Verbose
     md.verbose = verbose('all');
-
-    md.cluster=generic('name',oshostname(),'np',4);
-
-    md = solve(md, 'Transient');
-    % md=solve(md,'Stressbalance');
     
-    % figure;
-    % plotmodel(md, 'data', md.geometry.thickness, 'title', 'Ice Thickness');
-    % figure;
-    % plotmodel(md, 'data', md.geometry.bed, 'title', 'Bed Topography');
-    % figure;
-    % plotmodel(md,'data',md.results.StressbalanceSolution(end).Vel)
-    % plotmodel(md,'data',md.results.TransientSolution(end).Vel)
+    md.settings.waitonlock = 0;
+    md.cluster=generic('name',oshostname(),'np',nprocs);
+    md.cluster.codepath = [issmroot , '/bin'];
+    md.cluster.login = 'arobel3';
+    md.cluster.executionpath = [issmroot, '/execution'];
+    % md.cluster.interactive = 0;
+    % md.miscellaneous.name = 'MISMIP';
+    % md = solve(md, 'Transient','runtimename',false,'loadonly',loadonly);
+    md = solve(md, 'Transient');
+
+    md=loadresultsfromcluster(md);
 
     filename = fullfile(folder, 'Transient_steadystate1.mat');
-    save(filename, 'md');
+    loadonly = 1
+    if loadonly == 1
+        %md = solve(md, 'Transient','runtimename',false,'loadonly',loadonly);
+        save(filename, 'md');
+    end
 end
 
 % run without adaptive timesteping
@@ -154,7 +161,19 @@ if any(steps == 5)
 
     md=setflowequation(md,'SSA','all');
     
-    % md = transientrestart(md);
+    md = transientrestart(md);
+    md.geometry.thickness =  md.results.TransientSolution(end).Thickness;
+    md.geometry.surface   =  md.results.TransientSolution(end).Surface;
+    md.geometry.base      =  md.results.TransientSolution(end).Base;
+
+    % update other fields
+    md.initialization.vel      = md.results.TransientSolution(end).Vel;
+    md.initialization.vx       = md.results.TransientSolution(end).Vx
+    md.initialization.vy       = md.results.TransientSolution(end).Vy
+    md.initialization.pressure = md.results.TransientSolution(end).Pressure;
+    md.smb.mass_balance        = md.results.TransientSolution(end).SmbMassBalance;
+    md.mask.ocean_levelset     = md.results.TransientSolution(end).MaskOceanLevelset;
+
 
     md.timestepping.final_time=10000;
     md.settings.output_frequency=100;
@@ -165,13 +184,23 @@ if any(steps == 5)
 
     md.verbose = verbose('all');
 
+    md.settings.waitonlock = 0;
+    md.cluster=generic('name',oshostname(),'np',nprocs);
+    md.cluster.codepath = [issmroot , '/bin'];
+    md.cluster.login = 'arobel3';
+    md.cluster.executionpath = [issmroot, '/execution'];
+    % md.miscellaneous.name = 'MISMIP'
+    md.cluster.interactive = 0;
+    loadonly = 0;
+    md = solve(md, 'Transient','runtimename',false,'loadonly',loadonly);
+    md=loadresultsfromcluster(md);
 
-    md.cluster=generic('name',oshostname(),'np',4);
-
-    md = solve(md, 'Transient');
-
-    filename = fullfile(folder, 'Transient_steadystate2.mat');
-    save(filename, 'md');
+    loadonly = 1
+    if loadonly == 1
+        md = solve(md, 'Transient','runtimename',false,'loadonly',loadonly);
+        filename = fullfile(folder, 'Transient_steadystate2.mat');
+        save(filename, 'md');
+    end
 end
 
 
