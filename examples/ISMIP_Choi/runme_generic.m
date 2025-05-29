@@ -5,23 +5,13 @@ newpath=fullfile(issmroot,'/src/m/dev');
 addpath(newpath);
 devpath;
 
-% set the cluster configs
-codepath             = [issmroot , '/bin']; %path to directory with ISSM binaries
-execpath             = [issmroot, '/execution']; %path to directory for simulation execution
-coresrequested       = 24;
-memrequested         = 5; %GB
-timerequested        = 160*160; %minutes
-
 Lx = 640000;
 Ly = 80000;
 
-steps=[1:4]; loadonly = 0;
-% steps=[8];
-%steps=[4]; loadonly = 1;
+steps=[1:4]; 
+nprocs = 4;
 
-nprocs = 24;
-
-ens_id = 0;
+ens_id = 1;
 
 folder = sprintf('./Models/ens_id_%d', ens_id);
 if ~exist(folder, 'dir')
@@ -121,14 +111,14 @@ if any(steps == 4)
     md=setflowequation(md,'SSA','all');
     
     % Time stepping
-    md.timestepping=timesteppingadaptive();
-    md.timestepping.time_step_max=100;
-    md.timestepping.time_step_min=0.1;
-    md.timestepping.final_time=15000;
+    %md.timestepping=timesteppingadaptive();
+    %md.timestepping.time_step_max=100;
+    %md.timestepping.time_step_min=0.1;
+    %md.timestepping.final_time=15000;
 
-    %md.timestepping.start_time = 0;
-    %md.timestepping.time_step = 0.1;
-    %md.timestepping.final_time=100;
+    md.timestepping.start_time = 0;
+    md.timestepping.time_step = 0.1;
+    md.timestepping.final_time=100;
 
     md.settings.output_frequency=100;
     md.stressbalance.maxiter=10;
@@ -140,15 +130,16 @@ if any(steps == 4)
     md.verbose = verbose('all');
     
     md.settings.waitonlock = 0;
-    md.cluster = pace('np',coresrequested,'login','bkyanjo3','codepath',codepath,'executionpath',execpath,'mem',memrequested,'time',timerequested);
+    md.cluster = generic('name',oshostname(),'np',nprocs);
+    md.cluster.codepath = [issmroot , '/bin'];
+    md.cluster.login = 'arobel3';
+    md.cluster.executionpath = [issmroot, '/execution'];
+    md = solve(md, 'Transient');
 
-    md = solve(md, 'Transient','runtimename',false,'loadonly',loadonly);
+    filename = fullfile(folder, 'Transient_steadystate2.mat');
+       
+    save(filename, 'md')
 
-    if loadonly
-        filename = fullfile(folder, 'Transient_steadystate1.mat');
-        md=loadresultsfromcluster(md);
-        save(filename, 'md')
-    end
 end
 
 % run without adaptive timesteping
@@ -185,15 +176,15 @@ if any(steps == 5)
     md.verbose = verbose('all');
 
     md.settings.waitonlock = 0;
-    md.cluster = pace('np',coresrequested,'login','bkyanjo3','codepath',codepath,'executionpath',execpath,'mem',memrequested,'time',timerequested);
+    md.cluster = generic('name',oshostname(),'np',nprocs);
+    md.cluster.codepath = [issmroot , '/bin'];
+    md.cluster.login = 'arobel3';
+    md.cluster.executionpath = [issmroot, '/execution'];
+    md = solve(md, 'Transient');
 
-    md = solve(md, 'Transient','runtimename',false,'loadonly',loadonly);
-
-    if loadonly
-        filename = fullfile(folder, 'Transient_steadystate2.mat');
-        md=loadresultsfromcluster(md);
-        save(filename, 'md')
-    end
+    filename = fullfile(folder, 'Transient_steadystate2.mat');
+       
+    save(filename, 'md')
 end
 
 
