@@ -15,9 +15,14 @@ timerequested        = 160*160; %minutes
 Lx = 640000;
 Ly = 80000;
 
-steps=[1:4]; loadonly = 0;
+%steps=[1:4]; loadonly = 0;
 % steps=[8];
 %steps=[4]; loadonly = 1;
+
+%run2
+%steps=[5]; loadonly = 0;
+steps=[5]; loadonly = 1;
+
 
 nprocs = 24;
 
@@ -174,7 +179,8 @@ if any(steps == 5)
 
 
     md.timestepping.start_time = 0;
-    md.timestepping.time_step  = 0.1;
+    md.timestepping.time_step_min  = 1/12;
+    md.timestepping.time_step_max  = 5/12;
     md.timestepping.final_time =10000;
     md.settings.output_frequency=100;
     md.stressbalance.maxiter=100;

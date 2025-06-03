@@ -1,6 +1,6 @@
-%cwd = pwd
-%[issmroot,~,~]=fileparts(fileparts(cwd));
-issmroot='/storage/home/hcoda1/8/bkyanjo3/p-arobel3-0/ISSMbuild_dev/ISSM'
+cwd = pwd
+[issmroot,~,~]=fileparts(fileparts(cwd));
+%issmroot='/storage/home/hcoda1/8/bkyanjo3/p-arobel3-0/ISSMbuild_dev/ISSM'
 newpath=fullfile(issmroot,'/src/m/dev');
 addpath(newpath);
 devpath;
