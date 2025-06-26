@@ -41,6 +41,7 @@ cd ${PETSC_DIR}
 	--download-fblaslapack=1 \
 	--download-metis=1 \
 	--download-mpich=1 \
+	--download-mpich-device=ch3:sock \
 	--download-mumps=1 \
 	--download-parmetis=1 \
 	--download-scalapack=1 \
