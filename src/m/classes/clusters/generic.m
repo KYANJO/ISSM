@@ -115,7 +115,7 @@ classdef generic
 					%fprintf(fid,'LD_PRELOAD=%s \\\n',cluster.valgrindlib); it could be deleted
 					if ismac,
 						if IssmConfig('_HAVE_MPI_'),
-							fprintf(fid,'mpiexec -np %i %s --leak-check=full --leak-check=full --show-leak-kinds=all --error-limit=no --dsymutil=yes --suppressions=%s %s/%s %s %s %s 2> %s.errlog > %s.outlog ',...
+							fprintf(fid,'mpiexec -n %i %s --leak-check=full --leak-check=full --show-leak-kinds=all --error-limit=no --dsymutil=yes --suppressions=%s %s/%s %s %s %s 2> %s.errlog > %s.outlog ',...
 							cluster.np,cluster.valgrind,cluster.valgrindsup,cluster.codepath,executable,solution,[cluster.executionpath '/' dirname], modelname,modelname,modelname);
 						else
 							fprintf(fid,'%s --leak-check=full --dsymutil=yes --error-limit=no --leak-check=full --show-leak-kinds=all --suppressions=%s %s/%s %s %s %s 2> %s.errlog > %s.outlog',...
@@ -123,7 +123,7 @@ classdef generic
 						end
 					else
 						if IssmConfig('_HAVE_MPI_'),
-							fprintf(fid,'mpiexec -np %i %s --leak-check=full --error-limit=no --suppressions=%s %s/%s %s %s %s 2> %s.errlog > %s.outlog',...
+							fprintf(fid,'mpiexec -n %i %s --leak-check=full --error-limit=no --suppressions=%s %s/%s %s %s %s 2> %s.errlog > %s.outlog',...
 							cluster.np,cluster.valgrind,cluster.valgrindsup,cluster.codepath,executable,solution,[cluster.executionpath '/' dirname],modelname,modelname,modelname);
 						else
 							fprintf(fid,'%s --leak-check=full --error-limit=no --suppressions=%s %s/%s %s %s %s 2> %s.errlog > %s.outlog',...
@@ -135,13 +135,13 @@ classdef generic
 				else
 					if cluster.interactive
 						if IssmConfig('_HAVE_MPI_'),
-							fprintf(fid,'mpiexec -np %i %s/%s %s %s %s\n',cluster.np,cluster.codepath,executable,solution,[cluster.executionpath '/' dirname],modelname);
+							fprintf(fid,'mpiexec -n %i %s/%s %s %s %s\n',cluster.np,cluster.codepath,executable,solution,[cluster.executionpath '/' dirname],modelname);
 						else
 							fprintf(fid,'%s/%s %s %s %s',cluster.codepath,executable,solution,[cluster.executionpath '/' dirname],modelname);
 						end
 					else
 						if IssmConfig('_HAVE_MPI_'),
-							fprintf(fid,'mpiexec -np %i %s/%s %s %s %s 2> %s.errlog > %s.outlog &',cluster.np,cluster.codepath,executable,solution,[cluster.executionpath '/' dirname],modelname,modelname,modelname);
+							fprintf(fid,'mpiexec -n %i %s/%s %s %s %s 2> %s.errlog > %s.outlog &',cluster.np,cluster.codepath,executable,solution,[cluster.executionpath '/' dirname],modelname,modelname,modelname);
 						else
 							fprintf(fid,'%s/%s %s %s %s 2> %s.errlog > %s.outlog &',cluster.codepath,executable,solution,[cluster.executionpath '/' dirname],modelname,modelname,modelname);
 						end
@@ -187,7 +187,7 @@ classdef generic
 			fprintf(fid,'#!%s\n',cluster.shell);
 
 			%number of cpus:
-			mpistring=sprintf('mpiexec -np %i ',cluster.np);
+			mpistring=sprintf('mpiexec -n %i ',cluster.np);
 
 			%executable:
 			mpistring=[mpistring sprintf('%s/%s ',cluster.codepath,executable)];
@@ -231,10 +231,10 @@ classdef generic
 			fid=fopen([modelname '.queue'],'w');
 			fprintf(fid,'#!%s\n',cluster.shell);
 			if ~isvalgrind,
-				fprintf(fid,'mpiexec -np %i %s/%s %s %s %s : -np %i ./mitgcmuv\n',cluster.np,cluster.codepath,executable,solution,cluster.executionpath,modelname,cluster.npocean);
+				fprintf(fid,'mpiexec -n %i %s/%s %s %s %s : -n %i ./mitgcmuv\n',cluster.np,cluster.codepath,executable,solution,cluster.executionpath,modelname,cluster.npocean);
 
 			else
-				fprintf(fid,'mpiexec -np %i %s --leak-check=full --error-limit=no --dsymutil=yes --suppressions=%s  %s/%s %s %s %s : -np %i ./mitgcmuv\n',...
+				fprintf(fid,'mpiexec -n %i %s --leak-check=full --error-limit=no --dsymutil=yes --suppressions=%s  %s/%s %s %s %s : -n %i ./mitgcmuv\n',...
 					cluster.np,cluster.valgrind,cluster.valgrindsup,cluster.codepath,executable,solution,cluster.executionpath,modelname,cluster.npocean);
 			end
 			fclose(fid);
@@ -255,16 +255,16 @@ classdef generic
 				fprintf(fid,'#!/bin/sh\n');
 				if ~isvalgrind,
 					if cluster.interactive
-						fprintf(fid,'mpiexec -np %i %s/kriging.exe %s %s ',cluster.np,cluster.codepath,[cluster.executionpath '/' modelname],modelname);
+						fprintf(fid,'mpiexec -n %i %s/kriging.exe %s %s ',cluster.np,cluster.codepath,[cluster.executionpath '/' modelname],modelname);
 					else
-						fprintf(fid,'mpiexec -np %i %s/kriging.exe %s %s 2> %s.errlog >%s.outlog ',cluster.np,cluster.codepath,[cluster.executionpath '/' modelname],modelname,modelname,modelname);
+						fprintf(fid,'mpiexec -n %i %s/kriging.exe %s %s 2> %s.errlog >%s.outlog ',cluster.np,cluster.codepath,[cluster.executionpath '/' modelname],modelname,modelname,modelname);
 					end
 				elseif isgprof,
 					fprintf(fid,'\n gprof %s/kriging.exe gmon.out > %s.performance',cluster.codepath,modelname);
 				else
 					%Add --gen-suppressions=all to get suppression lines
 					%fprintf(fid,'LD_PRELOAD=%s \\\n',cluster.valgrindlib); it could be deleted
-					fprintf(fid,'mpiexec -np %i %s --leak-check=full --suppressions=%s %s/kriging.exe %s %s 2> %s.errlog >%s.outlog ',...
+					fprintf(fid,'mpiexec -n %i %s --leak-check=full --suppressions=%s %s/kriging.exe %s %s 2> %s.errlog >%s.outlog ',...
 						cluster.np,cluster.valgrind,cluster.valgrindsup,cluster.codepath,[cluster.executionpath '/' modelname],modelname,modelname,modelname);
 				end
 				if ~io_gather, %concatenate the output files:
